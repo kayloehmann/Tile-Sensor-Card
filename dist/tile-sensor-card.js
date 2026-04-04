@@ -127,14 +127,20 @@ function rgb2hex([r, g, b]) {
 function computeStateColor(stateObj, configColor) {
   const domain = computeDomain(stateObj.entity_id);
 
-  // Custom color: only when active
+  // Unavailable — no color
+  if (UNAVAILABLE_STATES.includes(stateObj.state)) {
+    return undefined;
+  }
+
+  // Custom color from config
   if (configColor) {
-    if (!stateActive(stateObj)) return undefined;
-    // Support named HA colors and hex
-    if (configColor.startsWith("#") || configColor.startsWith("rgb")) {
+    if (configColor === "state") {
+      // Fall through to automatic color logic
+    } else if (configColor.startsWith("#") || configColor.startsWith("rgb")) {
       return configColor;
+    } else {
+      return `var(--${configColor}-color, var(--state-icon-color))`;
     }
-    return `var(--${configColor}-color, var(--state-icon-color))`;
   }
 
   // Person/device_tracker: color is on the badge, not the icon
@@ -155,8 +161,14 @@ function computeStateColor(stateObj, configColor) {
     return rgb2hex(hsv2rgb(hsvColor));
   }
 
-  // Generic active state
+  // Active entities get their state color
   if (stateActive(stateObj)) {
+    return "var(--state-icon-color)";
+  }
+
+  // Sensor domain: always show state color (sensors are never "active"
+  // in the toggle sense, but they still get a colored icon in HA)
+  if (domain === "sensor" || domain === "weather" || domain === "sun") {
     return "var(--state-icon-color)";
   }
 
@@ -415,7 +427,10 @@ class TileSensorCard extends LitElement {
         <div class="content">
           ${showIcon
             ? html`
-                <ha-tile-icon>
+                <ha-tile-icon
+                  data-domain=${computeDomain(entityId)}
+                  data-state=${stateObj.state}
+                >
                   <ha-state-icon
                     slot="icon"
                     .hass=${this.hass}
