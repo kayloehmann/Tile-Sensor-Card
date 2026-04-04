@@ -562,8 +562,105 @@ class TileSensorCard extends LitElement {
 }
 
 // ---------------------------------------------------------------------------
-// Visual Config Editor
+// Visual Config Editor (uses ha-form with schema selectors like the native
+// Tile Card editor for full UI parity)
 // ---------------------------------------------------------------------------
+
+const EDITOR_SCHEMA = [
+  { name: "entity", selector: { entity: {} } },
+  {
+    name: "",
+    type: "grid",
+    schema: [
+      {
+        name: "name",
+        selector: { text: {} },
+      },
+      {
+        name: "icon",
+        selector: { icon: {} },
+        context: { icon_entity: "entity" },
+      },
+      {
+        name: "color",
+        selector: {
+          ui_color: {
+            default_color: "state",
+            include_state: true,
+          },
+        },
+      },
+      {
+        name: "value_size",
+        selector: {
+          select: {
+            mode: "dropdown",
+            options: [
+              { label: "Small (1.5rem)", value: "1.5rem" },
+              { label: "Medium (2rem)", value: "2rem" },
+              { label: "Large (2.5rem)", value: "2.5rem" },
+              { label: "Extra Large (3rem)", value: "3rem" },
+              { label: "Huge (4rem)", value: "4rem" },
+            ],
+            custom_value: true,
+          },
+        },
+      },
+    ],
+  },
+  {
+    name: "",
+    type: "grid",
+    schema: [
+      { name: "show_icon", selector: { boolean: {} } },
+      { name: "show_name", selector: { boolean: {} } },
+      { name: "show_state", selector: { boolean: {} } },
+    ],
+  },
+  {
+    name: "interactions",
+    type: "expandable",
+    flatten: true,
+    schema: [
+      {
+        name: "tap_action",
+        selector: {
+          ui_action: { default_action: "more-info" },
+        },
+      },
+      {
+        name: "",
+        type: "optional_actions",
+        flatten: true,
+        schema: [
+          {
+            name: "hold_action",
+            selector: { ui_action: { default_action: "none" } },
+          },
+          {
+            name: "double_tap_action",
+            selector: { ui_action: { default_action: "none" } },
+          },
+        ],
+      },
+    ],
+  },
+];
+
+const EDITOR_LABELS = {
+  entity: "Entity",
+  name: "Name",
+  icon: "Icon",
+  color: "Color",
+  value_size: "Value Size",
+  show_icon: "Show Icon",
+  show_name: "Show Name",
+  show_state: "Show State",
+  tap_action: "Tap Action",
+  hold_action: "Hold Action",
+  double_tap_action: "Double Tap Action",
+  interactions: "Interactions",
+};
 
 class TileSensorCardEditor extends LitElement {
   static get properties() {
@@ -578,29 +675,10 @@ class TileSensorCardEditor extends LitElement {
   }
 
   _valueChanged(ev) {
+    ev.stopPropagation();
     if (!this._config || !this.hass) return;
 
-    const target = ev.target;
-    const key = target.configValue;
-    let value =
-      ev.detail !== undefined && ev.detail.value !== undefined
-        ? ev.detail.value
-        : target.value;
-
-    if (
-      key === "show_icon" ||
-      key === "show_name" ||
-      key === "show_state"
-    ) {
-      value = target.checked;
-    }
-
-    const newConfig = { ...this._config };
-    if (value === "" || value === undefined) {
-      delete newConfig[key];
-    } else {
-      newConfig[key] = value;
-    }
+    const newConfig = ev.detail.value;
     this._config = newConfig;
 
     this.dispatchEvent(
@@ -612,76 +690,45 @@ class TileSensorCardEditor extends LitElement {
     );
   }
 
+  _computeLabel(schema) {
+    if (schema.name && EDITOR_LABELS[schema.name]) {
+      return EDITOR_LABELS[schema.name];
+    }
+    // Fall back to HA's built-in localization
+    if (this.hass && this.hass.localize) {
+      return (
+        this.hass.localize(
+          `ui.panel.lovelace.editor.card.tile.${schema.name}`
+        ) ||
+        this.hass.localize(
+          `ui.panel.lovelace.editor.card.generic.${schema.name}`
+        ) ||
+        schema.name
+      );
+    }
+    return schema.name;
+  }
+
   render() {
     if (!this.hass || !this._config) return nothing;
 
-    return html`
-      <div class="editor">
-        <ha-entity-picker
-          .hass=${this.hass}
-          .value=${this._config.entity}
-          .configValue=${"entity"}
-          @value-changed=${this._valueChanged}
-          allow-custom-entity
-        ></ha-entity-picker>
-        <ha-textfield
-          label="Name (optional)"
-          .value=${this._config.name || ""}
-          .configValue=${"name"}
-          @input=${this._valueChanged}
-        ></ha-textfield>
-        <ha-icon-picker
-          .hass=${this.hass}
-          .value=${this._config.icon || ""}
-          .configValue=${"icon"}
-          @value-changed=${this._valueChanged}
-        ></ha-icon-picker>
-        <ha-textfield
-          label="Value Size (e.g. 2.5rem, 40px)"
-          .value=${this._config.value_size || "2.5rem"}
-          .configValue=${"value_size"}
-          @input=${this._valueChanged}
-        ></ha-textfield>
-        <div class="switches">
-          <ha-formfield label="Show Icon">
-            <ha-switch
-              .checked=${this._config.show_icon !== false}
-              .configValue=${"show_icon"}
-              @change=${this._valueChanged}
-            ></ha-switch>
-          </ha-formfield>
-          <ha-formfield label="Show Name">
-            <ha-switch
-              .checked=${this._config.show_name !== false}
-              .configValue=${"show_name"}
-              @change=${this._valueChanged}
-            ></ha-switch>
-          </ha-formfield>
-          <ha-formfield label="Show State">
-            <ha-switch
-              .checked=${this._config.show_state !== false}
-              .configValue=${"show_state"}
-              @change=${this._valueChanged}
-            ></ha-switch>
-          </ha-formfield>
-        </div>
-      </div>
-    `;
-  }
+    // Ensure boolean defaults are set for the form
+    const data = {
+      show_icon: true,
+      show_name: true,
+      show_state: true,
+      value_size: "2.5rem",
+      ...this._config,
+    };
 
-  static get styles() {
-    return css`
-      .editor {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-        padding: 16px;
-      }
-      .switches {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
+    return html`
+      <ha-form
+        .hass=${this.hass}
+        .data=${data}
+        .schema=${EDITOR_SCHEMA}
+        .computeLabel=${this._computeLabel.bind(this)}
+        @value-changed=${this._valueChanged}
+      ></ha-form>
     `;
   }
 }
