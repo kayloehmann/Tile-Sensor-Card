@@ -27,6 +27,7 @@ The default Tile Card displays sensor values in a small secondary font, which ca
 - Accessible: keyboard navigation, focus ring, ARIA labels, ripple feedback
 - Supports light and dark themes
 - Handles unavailable/unknown states gracefully
+- Localized editor in 30 languages
 
 ## Installation
 
@@ -154,6 +155,14 @@ tap_action:
 hold_action:
   action: toggle
 ```
+
+## Localization
+
+The visual editor is translated into 30 languages based on your Home Assistant language setting:
+
+English, German, French, Spanish, Italian, Portuguese, Portuguese (BR), Dutch, Polish, Czech, Slovak, Danish, Swedish, Norwegian, Finnish, Russian, Ukrainian, Hungarian, Romanian, Bulgarian, Greek, Turkish, Japanese, Korean, Chinese (Simplified), Chinese (Traditional), Arabic, Hebrew, Catalan, Indonesian
+
+Falls back to base language (e.g. `pt` for `pt-BR`), then English.
 
 ## Compatibility
 
