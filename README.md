@@ -6,7 +6,7 @@
 
 A Home Assistant custom card based on the native [Tile Card](https://www.home-assistant.io/dashboards/tile/), with a **configurable sensor value size** for better readability.
 
-Uses the same built-in HA components (`ha-tile-icon`, `ha-tile-info`, `ha-ripple`) as the original Tile Card for pixel-perfect consistency.
+Uses the same built-in HA components (`ha-tile-icon`, `ha-tile-info`, `ha-ripple`) as the original Tile Card for pixel-perfect consistency — including state-based icon coloring, ripple effects, and focus handling.
 
 ## Why?
 
@@ -16,6 +16,17 @@ The default Tile Card displays sensor values in a small secondary font, which ca
 |---|---|
 | Wetter | Wetter |
 | ~~10,8 °C · Bewolkt~~ (small) | **10,8 °C** (large, configurable) |
+
+## Features
+
+- Configurable sensor value size (Small / Medium / Large / XL / Huge or custom CSS)
+- Pixel-perfect match with the native Tile Card layout and styling
+- State-based icon coloring (lights with RGB, sensors, weather, switches, etc.)
+- Visual config editor with entity picker, icon picker, color selector, and action editors
+- Tap, hold, and double-tap actions
+- Accessible: keyboard navigation, focus ring, ARIA labels, ripple feedback
+- Supports light and dark themes
+- Handles unavailable/unknown states gracefully
 
 ## Installation
 
@@ -52,7 +63,7 @@ A visual editor is available when adding the card via the UI.
 | `entity` | string | *required* | Entity ID |
 | `name` | string | entity name | Override the display name |
 | `icon` | string | entity icon | Override the icon (e.g. `mdi:thermometer`) |
-| `color` | string | state-based | Color (named HA color or hex, e.g. `blue`, `#ff5500`) |
+| `color` | string | `state` | Icon color: `state` (automatic), named HA color, or hex |
 | `show_icon` | boolean | `true` | Show or hide the icon |
 | `show_name` | boolean | `true` | Show or hide the name |
 | `show_state` | boolean | `true` | Show or hide the sensor value |
@@ -60,6 +71,18 @@ A visual editor is available when adding the card via the UI.
 | `tap_action` | object | `more-info` | Action on tap |
 | `hold_action` | object | `none` | Action on hold |
 | `double_tap_action` | object | `none` | Action on double tap |
+
+### Value Size Presets
+
+The visual editor offers these presets (or enter any CSS value):
+
+| Preset | Value |
+|---|---|
+| Small | `1.5rem` |
+| Medium | `2rem` |
+| Large (default) | `2.5rem` |
+| Extra Large | `3rem` |
+| Huge | `4rem` |
 
 ### Actions
 
@@ -119,6 +142,17 @@ type: custom:tile-sensor-card
 entity: sensor.co2
 color: red
 value_size: 2.5rem
+```
+
+### With hold action
+
+```yaml
+type: custom:tile-sensor-card
+entity: light.living_room
+tap_action:
+  action: more-info
+hold_action:
+  action: toggle
 ```
 
 ## Compatibility
