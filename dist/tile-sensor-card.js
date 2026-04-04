@@ -298,7 +298,7 @@ class TileSensorCard extends LitElement {
   getGridOptions() {
     return {
       columns: 6,
-      rows: 2,
+      rows: "auto",
       min_columns: 2,
       min_rows: 1,
     };
