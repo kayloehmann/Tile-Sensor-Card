@@ -1,10 +1,13 @@
 /**
- * Tile Sensor Card v1.0.0
+ * Tile Sensor Card v1.1.0
  *
- * A Home Assistant custom card based on the Tile Card,
+ * A Home Assistant custom card based on the native Tile Card,
  * with a prominently displayed sensor value.
  *
- * https://github.com/kaygdev/tile-sensor-card
+ * Re-uses HA's built-in tile sub-components (ha-tile-container,
+ * ha-tile-icon, ha-tile-info) for pixel-perfect fidelity.
+ *
+ * https://github.com/kayloehmann/tile-sensor-card
  */
 
 const LitElement = Object.getPrototypeOf(
@@ -14,7 +17,7 @@ const html = LitElement.prototype.html;
 const css = LitElement.prototype.css;
 const nothing = LitElement.prototype.nothing;
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.1.0";
 
 console.info(
   `%c  TILE-SENSOR-CARD  %c  v${CARD_VERSION}  `,
@@ -22,70 +25,142 @@ console.info(
   "color: white; font-weight: bold; background: dimgray"
 );
 
-// --- Action handler helper ---
-
-function handleAction(node, hass, config, action) {
-  const actionConfig = config[`${action}_action`];
-  if (!actionConfig || actionConfig.action === "none") return;
-
-  switch (actionConfig.action) {
-    case "more-info": {
-      const event = new Event("hass-more-info", {
-        bubbles: true,
-        composed: true,
-      });
-      event.detail = {
-        entityId: actionConfig.entity || config.entity,
-      };
-      node.dispatchEvent(event);
-      break;
-    }
-    case "toggle":
-      hass.callService("homeassistant", "toggle", {
-        entity_id: config.entity,
-      });
-      break;
-    case "call-service":
-    case "perform-action": {
-      const [domain, service] = (
-        actionConfig.service ||
-        actionConfig.perform_action ||
-        ""
-      ).split(".");
-      if (domain && service) {
-        hass.callService(
-          domain,
-          service,
-          actionConfig.service_data || actionConfig.data || {}
-        );
-      }
-      break;
-    }
-    case "navigate":
-      if (actionConfig.navigation_path) {
-        history.pushState(null, "", actionConfig.navigation_path);
-        const navEvent = new Event("location-changed", {
-          bubbles: true,
-          composed: true,
-        });
-        navEvent.detail = { replace: false };
-        window.dispatchEvent(navEvent);
-      }
-      break;
-    case "url":
-      if (actionConfig.url_path) {
-        window.open(actionConfig.url_path);
-      }
-      break;
-  }
-}
-
-// --- Helpers ---
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 const UNAVAILABLE_STATES = ["unavailable", "unknown"];
 
-function isUnavailable(stateObj) {
-  return UNAVAILABLE_STATES.includes(stateObj.state);
+const DOMAINS_TOGGLE = new Set([
+  "automation",
+  "cover",
+  "fan",
+  "humidifier",
+  "input_boolean",
+  "light",
+  "lock",
+  "media_player",
+  "remote",
+  "siren",
+  "switch",
+  "vacuum",
+]);
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function computeDomain(entityId) {
+  return entityId.split(".")[0];
+}
+
+function stateActive(stateObj) {
+  const domain = computeDomain(stateObj.entity_id);
+  const state = stateObj.state;
+
+  if (UNAVAILABLE_STATES.includes(state)) return false;
+
+  // Domain-specific active states
+  switch (domain) {
+    case "alarm_control_panel":
+      return state !== "disarmed";
+    case "cover":
+      return state !== "closed";
+    case "device_tracker":
+    case "person":
+      return state !== "not_home";
+    case "lock":
+      return state !== "locked";
+    case "vacuum":
+      return !["docked", "idle"].includes(state);
+    case "plant":
+    case "group":
+    case "timer":
+      return state !== "off" && state !== "idle" && state !== "paused";
+    default:
+      return state === "on" || state === "open" || state === "playing" ||
+        state === "active" || state === "home";
+  }
+}
+
+function rgb2hsv([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  const s = max === 0 ? 0 : d / max;
+  const v = max;
+  if (d !== 0) {
+    switch (max) {
+      case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+      case g: h = ((b - r) / d + 2) / 6; break;
+      case b: h = ((r - g) / d + 4) / 6; break;
+    }
+  }
+  return [h * 360, s * 100, v * 255];
+}
+
+function hsv2rgb([h, s, v]) {
+  h /= 360; s /= 100; v /= 255;
+  let r, g, b;
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  switch (i % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    case 5: r = v; g = p; b = q; break;
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+function rgb2hex([r, g, b]) {
+  return "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
+}
+
+function computeStateColor(stateObj, configColor) {
+  const domain = computeDomain(stateObj.entity_id);
+
+  // Custom color: only when active
+  if (configColor) {
+    if (!stateActive(stateObj)) return undefined;
+    // Support named HA colors and hex
+    if (configColor.startsWith("#") || configColor.startsWith("rgb")) {
+      return configColor;
+    }
+    return `var(--${configColor}-color, var(--state-icon-color))`;
+  }
+
+  // Person/device_tracker: color is on the badge, not the icon
+  if (domain === "person" || domain === "device_tracker") {
+    return undefined;
+  }
+
+  // Light with RGB: use actual light color with contrast adjustment
+  if (domain === "light" && stateObj.attributes.rgb_color && stateActive(stateObj)) {
+    const hsvColor = rgb2hsv(stateObj.attributes.rgb_color);
+    if (hsvColor[1] < 0.4) {
+      if (hsvColor[1] < 0.1) {
+        hsvColor[2] = 225;
+      } else {
+        hsvColor[1] = 0.4;
+      }
+    }
+    return rgb2hex(hsv2rgb(hsvColor));
+  }
+
+  // Generic active state
+  if (stateActive(stateObj)) {
+    return "var(--state-icon-color)";
+  }
+
+  return undefined;
 }
 
 function formatState(hass, stateObj) {
@@ -96,39 +171,67 @@ function formatState(hass, stateObj) {
   return unit ? `${stateObj.state} ${unit}` : stateObj.state;
 }
 
-function computeStateColor(stateObj) {
-  if (isUnavailable(stateObj)) {
-    return null;
+function formatName(hass, stateObj, configName) {
+  if (configName) return configName;
+  if (typeof hass.formatEntityName === "function") {
+    return hass.formatEntityName(stateObj);
   }
-  const domain = stateObj.entity_id.split(".")[0];
-  const state = stateObj.state;
-
-  if (domain === "light" && state === "on") {
-    const rgb = stateObj.attributes.rgb_color;
-    if (rgb) {
-      return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
-    }
-    return "var(--state-light-active-color, var(--color-yellow))";
-  }
-
-  const activeStates = {
-    switch: ["on"],
-    binary_sensor: ["on"],
-    fan: ["on"],
-    climate: ["heat", "cool", "heat_cool", "auto"],
-    cover: ["open", "opening", "closing"],
-    lock: ["unlocked"],
-    alarm_control_panel: ["armed_home", "armed_away", "armed_night", "armed_custom_bypass", "pending", "triggered"],
-  };
-
-  if (activeStates[domain]?.includes(state)) {
-    return "var(--state-active-color, var(--color-primary))";
-  }
-
-  return null;
+  return stateObj.attributes.friendly_name || stateObj.entity_id;
 }
 
-// --- Main Card ---
+// ---------------------------------------------------------------------------
+// Action handling (mirrors HA's handleAction)
+// ---------------------------------------------------------------------------
+
+function fireAction(node, hass, config, action) {
+  const actionConfig = config[`${action}_action`];
+  if (!actionConfig || actionConfig.action === "none") return;
+
+  switch (actionConfig.action) {
+    case "more-info": {
+      const event = new Event("hass-more-info", {
+        bubbles: true,
+        composed: true,
+      });
+      event.detail = { entityId: actionConfig.entity || config.entity };
+      node.dispatchEvent(event);
+      break;
+    }
+    case "toggle":
+      hass.callService("homeassistant", "toggle", {
+        entity_id: config.entity,
+      });
+      break;
+    case "call-service":
+    case "perform-action": {
+      const svc = actionConfig.service || actionConfig.perform_action || "";
+      const [domain, service] = svc.split(".");
+      if (domain && service) {
+        hass.callService(domain, service, actionConfig.service_data || actionConfig.data || {});
+      }
+      break;
+    }
+    case "navigate":
+      if (actionConfig.navigation_path) {
+        history.pushState(null, "", actionConfig.navigation_path);
+        window.dispatchEvent(
+          new CustomEvent("location-changed", { bubbles: true, composed: true, detail: { replace: false } })
+        );
+      }
+      break;
+    case "url":
+      if (actionConfig.url_path) window.open(actionConfig.url_path);
+      break;
+  }
+}
+
+function hasAction(actionConfig) {
+  return actionConfig && actionConfig.action && actionConfig.action !== "none";
+}
+
+// ---------------------------------------------------------------------------
+// Main Card
+// ---------------------------------------------------------------------------
 
 class TileSensorCard extends LitElement {
   static get properties() {
@@ -144,7 +247,6 @@ class TileSensorCard extends LitElement {
     );
     return {
       entity: sensors[0] || "sensor.example",
-      tap_action: { action: "more-info" },
     };
   }
 
@@ -156,8 +258,13 @@ class TileSensorCard extends LitElement {
     if (!config.entity) {
       throw new Error("You need to define an entity");
     }
-    if (config.value_size && !/^\d+(\.\d+)?(rem|em|px|%)$/.test(config.value_size)) {
-      throw new Error(`Invalid value_size: "${config.value_size}". Use CSS units like "2.5rem", "40px", etc.`);
+    if (
+      config.value_size &&
+      !/^\d+(\.\d+)?(rem|em|px|%)$/.test(config.value_size)
+    ) {
+      throw new Error(
+        `Invalid value_size: "${config.value_size}". Use CSS units like "2.5rem", "40px".`
+      );
     }
 
     this._config = {
@@ -185,151 +292,156 @@ class TileSensorCard extends LitElement {
     };
   }
 
-  // --- Action handling ---
-
-  _handleTap() {
-    handleAction(this, this.hass, this._config, "tap");
-  }
-
-  _handleHold() {
-    handleAction(this, this.hass, this._config, "hold");
-  }
-
-  _handleDoubleTap() {
-    handleAction(this, this.hass, this._config, "double_tap");
-  }
+  // --- Action handling via pointer events ---
 
   connectedCallback() {
     super.connectedCallback();
     this._holdTimer = null;
     this._dblClickTimer = null;
     this._clickCount = 0;
+    this._held = false;
   }
 
-  _handlePointerDown() {
+  _onPointerDown() {
+    this._held = false;
     this._holdTimer = setTimeout(() => {
-      this._handleHold();
-      this._holdTimer = null;
+      this._held = true;
+      fireAction(this, this.hass, this._config, "hold");
     }, 500);
   }
 
-  _handlePointerUp() {
+  _onPointerUp() {
     if (this._holdTimer) {
       clearTimeout(this._holdTimer);
       this._holdTimer = null;
     }
   }
 
-  _handleClick() {
+  _onPointerCancel() {
+    this._onPointerUp();
+  }
+
+  _onClick() {
+    if (this._held) {
+      this._held = false;
+      return;
+    }
+
+    const hasDblTap = hasAction(this._config.double_tap_action);
+    if (!hasDblTap) {
+      fireAction(this, this.hass, this._config, "tap");
+      return;
+    }
+
     this._clickCount++;
     if (this._clickCount === 1) {
       this._dblClickTimer = setTimeout(() => {
         this._clickCount = 0;
-        this._handleTap();
+        fireAction(this, this.hass, this._config, "tap");
       }, 250);
-    } else if (this._clickCount === 2) {
+    } else {
       clearTimeout(this._dblClickTimer);
       this._clickCount = 0;
-      this._handleDoubleTap();
+      fireAction(this, this.hass, this._config, "double_tap");
     }
   }
 
-  _handleKeyDown(e) {
+  _onKeyDown(e) {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      this._handleTap();
+      fireAction(this, this.hass, this._config, "tap");
     }
   }
 
   // --- Render ---
 
   render() {
-    if (!this.hass || !this._config) {
-      return html``;
-    }
+    if (!this.hass || !this._config) return nothing;
 
     const entityId = this._config.entity;
-    const stateObj = this.hass.states[entityId];
+    const stateObj = entityId ? this.hass.states[entityId] : undefined;
 
     if (!stateObj) {
       return html`
         <ha-card class="not-found">
-          <div class="container">
-            <div class="icon-container unavailable">
+          <div class="content">
+            <div class="icon-shape unavailable">
               <ha-icon icon="mdi:alert-circle-outline"></ha-icon>
             </div>
-            <div class="info">
-              <span class="name">Entity not found</span>
-              <span class="value unavailable-text">${entityId}</span>
-            </div>
+            <ha-tile-info>
+              <span slot="primary">Entity not found</span>
+              <span slot="secondary">${entityId}</span>
+            </ha-tile-info>
           </div>
         </ha-card>
       `;
     }
 
-    const name =
-      this._config.name ||
-      stateObj.attributes.friendly_name ||
-      entityId;
-    const icon = this._config.icon || stateObj.attributes.icon;
+    const name = formatName(this.hass, stateObj, this._config.name);
+    const icon = this._config.icon;
     const showIcon = this._config.show_icon;
     const showName = this._config.show_name;
     const showState = this._config.show_state;
     const valueSize = this._config.value_size;
-    const unavailable = isUnavailable(stateObj);
-    const stateColor = this._config.color
-      ? `var(--color-${this._config.color}, ${this._config.color})`
-      : computeStateColor(stateObj);
+    const unavailable = UNAVAILABLE_STATES.includes(stateObj.state);
+    const active = stateActive(stateObj);
+    const color = computeStateColor(stateObj, this._config.color);
+    const interactive =
+      !this._config.tap_action ||
+      hasAction(this._config.tap_action) ||
+      hasAction(this._config.hold_action) ||
+      hasAction(this._config.double_tap_action);
 
     const formattedState = formatState(this.hass, stateObj);
 
-    const hasAction =
-      this._config.tap_action?.action !== "none";
-
     return html`
       <ha-card
-        class=${unavailable ? "unavailable" : ""}
-        style=${stateColor ? `--tile-color: ${stateColor}` : ""}
-        @click=${this._handleClick}
-        @pointerdown=${this._handlePointerDown}
-        @pointerup=${this._handlePointerUp}
-        @pointercancel=${this._handlePointerUp}
-        @keydown=${this._handleKeyDown}
-        tabindex=${hasAction ? "0" : "-1"}
-        role=${hasAction ? "button" : "presentation"}
-        aria-label="${name}: ${formattedState}"
+        class="${active ? "active" : ""}"
+        style="${color ? `--tile-color: ${color}` : ""}"
       >
-        <div class="container">
+        <div
+          class="background"
+          role=${interactive ? "button" : ""}
+          tabindex=${interactive ? "0" : "-1"}
+          aria-label="${name}: ${formattedState}"
+          @click=${this._onClick}
+          @pointerdown=${this._onPointerDown}
+          @pointerup=${this._onPointerUp}
+          @pointercancel=${this._onPointerCancel}
+          @keydown=${this._onKeyDown}
+        >
+          <ha-ripple .disabled=${!interactive}></ha-ripple>
+        </div>
+        <div class="content">
           ${showIcon
             ? html`
-                <div
-                  class="icon-container ${unavailable ? "unavailable" : ""}"
-                >
+                <ha-tile-icon>
                   <ha-state-icon
+                    slot="icon"
                     .hass=${this.hass}
                     .stateObj=${stateObj}
                     .icon=${icon}
                   ></ha-state-icon>
-                </div>
+                </ha-tile-icon>
               `
             : ""}
-          <div class="info">
+          <ha-tile-info>
             ${showName
-              ? html`<span class="name">${name}</span>`
-              : ""}
+              ? html`<span slot="primary">${name}</span>`
+              : nothing}
             ${showState
               ? html`
                   <span
-                    class="value ${unavailable ? "unavailable-text" : ""}"
-                    style="font-size: ${valueSize}"
+                    slot="secondary"
+                    class="sensor-value ${unavailable ? "unavailable" : ""}"
+                    style="--sensor-value-size: ${valueSize}"
                   >
                     ${formattedState}
                   </span>
                 `
-              : ""}
-          </div>
+              : nothing}
+          </ha-tile-info>
         </div>
-        ${hasAction ? html`<ha-ripple></ha-ripple>` : ""}
       </ha-card>
     `;
   }
@@ -337,26 +449,27 @@ class TileSensorCard extends LitElement {
   static get styles() {
     return css`
       :host {
-        --tile-color: var(--state-icon-color, var(--disabled-color));
+        --tile-color: var(--state-inactive-color);
+      }
+
+      ha-card.active {
+        --tile-color: var(--state-icon-color);
       }
 
       ha-card {
         position: relative;
         height: 100%;
-        cursor: pointer;
-        outline: none;
-        padding: 12px;
-        box-sizing: border-box;
-        transition: box-shadow 180ms ease-in-out;
+        transition:
+          box-shadow 180ms ease-in-out,
+          border-color 180ms ease-in-out;
         overflow: hidden;
       }
 
-      ha-card:focus-visible {
-        box-shadow: 0 0 0 2px var(--primary-color);
-      }
-
-      ha-card.unavailable {
-        opacity: 0.6;
+      ha-card:has(.background:focus-visible) {
+        --shadow-default: var(--ha-card-box-shadow, 0 0 0 0 transparent);
+        --shadow-focus: 0 0 0 1px var(--tile-color);
+        border-color: var(--tile-color);
+        box-shadow: var(--shadow-default), var(--shadow-focus);
       }
 
       ha-card.not-found {
@@ -364,81 +477,93 @@ class TileSensorCard extends LitElement {
         cursor: default;
       }
 
-      .container {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        height: 100%;
-      }
-
-      .icon-container {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 40px;
-        height: 40px;
-        flex-shrink: 0;
-        border-radius: 50%;
-        background-color: rgba(var(--rgb-state-default-color, 68, 115, 158), 0.1);
-        color: var(--tile-color);
-        --mdc-icon-size: 24px;
-        transition: color 180ms ease-in-out,
-          background-color 180ms ease-in-out;
-      }
-
-      .icon-container:not(.unavailable) {
-        background-color: color-mix(in srgb, var(--tile-color) 20%, transparent);
-      }
-
-      .icon-container.unavailable {
-        color: var(--disabled-color);
-      }
-
-      .info {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        min-width: 0;
-        flex: 1;
-        gap: 2px;
-      }
-
-      .name {
-        font-size: 14px;
-        font-weight: 500;
-        line-height: 20px;
-        color: var(--primary-text-color);
-        white-space: nowrap;
+      .background {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        right: 0;
+        border-radius: var(--ha-card-border-radius, var(--ha-border-radius-lg));
+        margin: calc(-1 * var(--ha-card-border-width, 1px));
         overflow: hidden;
-        text-overflow: ellipsis;
       }
 
-      .value {
-        font-weight: 500;
-        line-height: 1.1;
-        color: var(--primary-text-color);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        transition: font-size 180ms ease-in-out;
+      .background[role="button"] {
+        cursor: pointer;
       }
 
-      .unavailable-text {
-        color: var(--secondary-text-color);
-        font-size: 1rem !important;
-        font-style: italic;
+      .background:focus {
+        outline: none;
       }
 
       ha-ripple {
-        position: absolute;
-        inset: 0;
+        --ha-ripple-color: var(--tile-color);
+        --ha-ripple-hover-opacity: 0.04;
+        --ha-ripple-pressed-opacity: 0.12;
+      }
+
+      .content {
+        position: relative;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        padding: 10px;
+        flex: 1;
+        min-width: 0;
+        box-sizing: border-box;
         pointer-events: none;
+        gap: 10px;
+        height: 100%;
+      }
+
+      ha-tile-icon {
+        --tile-icon-color: var(--tile-color);
+        position: relative;
+        padding: 6px;
+        margin: -6px;
+      }
+
+      ha-tile-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .sensor-value {
+        font-size: var(--sensor-value-size, 2.5rem) !important;
+        font-weight: 500 !important;
+        line-height: 1.1 !important;
+      }
+
+      .sensor-value.unavailable {
+        font-size: var(
+          --ha-tile-info-secondary-font-size,
+          var(--ha-font-size-s)
+        ) !important;
+        font-style: italic;
+        color: var(--secondary-text-color);
+      }
+
+      .icon-shape {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        flex-shrink: 0;
+        border-radius: 50%;
+        color: var(--disabled-color);
+      }
+
+      .icon-shape.unavailable {
+        background-color: rgba(var(--rgb-disabled-color, 111, 118, 125), 0.2);
       }
     `;
   }
 }
 
-// --- Visual Config Editor ---
+// ---------------------------------------------------------------------------
+// Visual Config Editor
+// ---------------------------------------------------------------------------
 
 class TileSensorCardEditor extends LitElement {
   static get properties() {
@@ -458,9 +583,15 @@ class TileSensorCardEditor extends LitElement {
     const target = ev.target;
     const key = target.configValue;
     let value =
-      ev.detail !== undefined ? ev.detail.value : target.value;
+      ev.detail !== undefined && ev.detail.value !== undefined
+        ? ev.detail.value
+        : target.value;
 
-    if (key === "show_icon" || key === "show_name" || key === "show_state") {
+    if (
+      key === "show_icon" ||
+      key === "show_name" ||
+      key === "show_state"
+    ) {
       value = target.checked;
     }
 
@@ -482,9 +613,7 @@ class TileSensorCardEditor extends LitElement {
   }
 
   render() {
-    if (!this.hass || !this._config) {
-      return html``;
-    }
+    if (!this.hass || !this._config) return nothing;
 
     return html`
       <div class="editor">
@@ -568,5 +697,5 @@ window.customCards.push({
     "A tile card with a prominently displayed sensor value",
   preview: true,
   documentationURL:
-    "https://github.com/kaygdev/tile-sensor-card",
+    "https://github.com/kayloehmann/Tile-Sensor-Card",
 });
