@@ -283,7 +283,7 @@ class TileSensorCard extends LitElement {
       show_icon: true,
       show_name: true,
       show_state: true,
-      value_size: "2.5rem",
+      value_size: "1.5rem",
       tap_action: { action: "more-info" },
       hold_action: { action: "none" },
       double_tap_action: { action: "none" },
@@ -544,7 +544,7 @@ class TileSensorCard extends LitElement {
       }
 
       .sensor-value {
-        font-size: var(--sensor-value-size, 2.5rem) !important;
+        font-size: var(--sensor-value-size, 1.5rem) !important;
         font-weight: 500 !important;
         line-height: 1.1 !important;
       }
@@ -975,7 +975,7 @@ class TileSensorCardEditor extends LitElement {
       show_icon: true,
       show_name: true,
       show_state: true,
-      value_size: "2.5rem",
+      value_size: "1.5rem",
       ...this._config,
     };
 

@@ -68,7 +68,7 @@ A visual editor is available when adding the card via the UI.
 | `show_icon` | boolean | `true` | Show or hide the icon |
 | `show_name` | boolean | `true` | Show or hide the name |
 | `show_state` | boolean | `true` | Show or hide the sensor value |
-| `value_size` | string | `2.5rem` | Font size of the sensor value (CSS units) |
+| `value_size` | string | `1.5rem` | Font size of the sensor value (CSS units) |
 | `tap_action` | object | `more-info` | Action on tap |
 | `hold_action` | object | `none` | Action on hold |
 | `double_tap_action` | object | `none` | Action on double tap |
@@ -79,9 +79,9 @@ The visual editor offers these presets (or enter any CSS value):
 
 | Preset | Value |
 |---|---|
-| Small | `1.5rem` |
+| Small (default) | `1.5rem` |
 | Medium | `2rem` |
-| Large (default) | `2.5rem` |
+| Large | `2.5rem` |
 | Extra Large | `3rem` |
 | Huge | `4rem` |
 
@@ -142,7 +142,7 @@ value_size: 2rem
 type: custom:tile-sensor-card
 entity: sensor.co2
 color: red
-value_size: 2.5rem
+value_size: 2rem
 ```
 
 ### With hold action
