@@ -19,7 +19,7 @@ The default Tile Card displays sensor values in a small secondary font, which ca
 
 ## Features
 
-- Configurable sensor value size (Small / Medium / Large / XL / Huge or custom CSS)
+- Configurable sensor value size and unit size (independent font sizes)
 - Pixel-perfect match with the native Tile Card layout and styling
 - State-based icon coloring (lights with RGB, sensors, weather, switches, etc.)
 - Visual config editor with entity picker, icon picker, color selector, and action editors
@@ -69,6 +69,7 @@ A visual editor is available when adding the card via the UI.
 | `show_name` | boolean | `true` | Show or hide the name |
 | `show_state` | boolean | `true` | Show or hide the sensor value |
 | `value_size` | string | `1.5rem` | Font size of the sensor value (CSS units) |
+| `unit_size` | string | `1rem` | Font size of the unit of measurement (CSS units) |
 | `tap_action` | object | `more-info` | Action on tap |
 | `hold_action` | object | `none` | Action on hold |
 | `double_tap_action` | object | `none` | Action on double tap |
@@ -84,6 +85,15 @@ The visual editor offers these presets (or enter any CSS value):
 | Large | `2.5rem` |
 | Extra Large | `3rem` |
 | Huge | `4rem` |
+
+### Unit Size Presets
+
+| Preset | Value |
+|---|---|
+| Small | `0.75rem` |
+| Medium (default) | `1rem` |
+| Large | `1.25rem` |
+| Extra Large | `1.5rem` |
 
 ### Actions
 
@@ -134,6 +144,15 @@ type: custom:tile-sensor-card
 entity: sensor.humidity
 show_name: false
 value_size: 2rem
+```
+
+### Small unit
+
+```yaml
+type: custom:tile-sensor-card
+entity: sensor.outdoor_temperature
+value_size: 2rem
+unit_size: 0.75rem
 ```
 
 ### Custom color
