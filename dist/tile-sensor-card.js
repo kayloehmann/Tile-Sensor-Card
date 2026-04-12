@@ -1,5 +1,5 @@
 /**
- * Tile Sensor Card v1.1.0
+ * Tile Sensor Card v1.5.0
  *
  * A Home Assistant custom card based on the native Tile Card,
  * with a prominently displayed sensor value.
@@ -17,7 +17,7 @@ const html = LitElement.prototype.html;
 const css = LitElement.prototype.css;
 const nothing = LitElement.prototype.nothing;
 
-const CARD_VERSION = "1.1.0";
+const CARD_VERSION = "1.5.0";
 
 console.info(
   `%c  TILE-SENSOR-CARD  %c  v${CARD_VERSION}  `,
@@ -199,6 +199,20 @@ function formatStateFull(hass, stateObj) {
   return unit ? `${stateObj.state} ${unit}` : stateObj.state;
 }
 
+function formatRelativeTime(lastUpdated) {
+  if (!lastUpdated) return "";
+  const now = Date.now();
+  const updated = new Date(lastUpdated).getTime();
+  const diffSec = Math.floor((now - updated) / 1000);
+  if (diffSec < 60) return `${diffSec}s`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d`;
+}
+
 function formatName(hass, stateObj, configName) {
   if (configName) return configName;
   if (typeof hass.formatEntityName === "function") {
@@ -266,6 +280,7 @@ class TileSensorCard extends LitElement {
     return {
       hass: { attribute: false },
       _config: { state: true },
+      _now: { state: true },
     };
   }
 
@@ -302,6 +317,7 @@ class TileSensorCard extends LitElement {
       show_icon: true,
       show_name: true,
       show_state: true,
+      show_last_updated: false,
       value_size: "1.5rem",
       unit_size: "1rem",
       tap_action: { action: "more-info" },
@@ -332,6 +348,19 @@ class TileSensorCard extends LitElement {
     this._dblClickTimer = null;
     this._clickCount = 0;
     this._held = false;
+    this._updateInterval = setInterval(() => {
+      if (this._config && this._config.show_last_updated) {
+        this._now = Date.now();
+      }
+    }, 10000);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this._updateInterval) {
+      clearInterval(this._updateInterval);
+      this._updateInterval = null;
+    }
   }
 
   _onPointerDown() {
@@ -428,6 +457,10 @@ class TileSensorCard extends LitElement {
     const unit = getUnit(stateObj);
     const unitSize = this._config.unit_size;
     const formattedStateFull = formatStateFull(this.hass, stateObj);
+    const showLastUpdated = this._config.show_last_updated;
+    const lastUpdated = showLastUpdated
+      ? formatRelativeTime(stateObj.last_updated)
+      : "";
 
     return html`
       <ha-card
@@ -479,6 +512,8 @@ class TileSensorCard extends LitElement {
                           class="unit"
                           style="--sensor-unit-size: ${unitSize}"
                         >${unit}</span>`
+                      : ""}${showLastUpdated && lastUpdated
+                      ? html`<span class="last-updated">${lastUpdated}</span>`
                       : ""}
                   </span>
                 `
@@ -575,6 +610,9 @@ class TileSensorCard extends LitElement {
         font-size: var(--sensor-value-size, 1.5rem) !important;
         font-weight: 500 !important;
         line-height: 1.1 !important;
+        display: flex !important;
+        align-items: baseline;
+        width: 100%;
       }
 
       .unit {
@@ -582,6 +620,16 @@ class TileSensorCard extends LitElement {
         font-weight: 400;
         color: var(--secondary-text-color);
         margin-inline-start: 4px;
+      }
+
+      .last-updated {
+        font-size: 0.75rem;
+        font-weight: 400;
+        color: var(--secondary-text-color);
+        margin-inline-start: auto;
+        padding-inline-start: 8px;
+        white-space: nowrap;
+        opacity: 0.7;
       }
 
       .sensor-value.unavailable {
@@ -682,6 +730,7 @@ function buildEditorSchema(hass) {
         { name: "show_icon", selector: { boolean: {} } },
         { name: "show_name", selector: { boolean: {} } },
         { name: "show_state", selector: { boolean: {} } },
+        { name: "show_last_updated", selector: { boolean: {} } },
       ],
     },
     {
@@ -724,7 +773,7 @@ const TRANSLATIONS = {
     entity: "Entity", name: "Name", icon: "Icon", color: "Color",
     value_size: "Value Size", unit_size: "Unit Size",
     show_icon: "Show Icon", show_name: "Show Name",
-    show_state: "Show State", tap_action: "Tap Action", hold_action: "Hold Action",
+    show_state: "Show State", show_last_updated: "Last Updated", tap_action: "Tap Action", hold_action: "Hold Action",
     double_tap_action: "Double Tap Action", interactions: "Interactions",
     size_small: "Small", size_medium: "Medium", size_large: "Large",
     size_xlarge: "Extra Large", size_huge: "Huge",
@@ -733,7 +782,7 @@ const TRANSLATIONS = {
     entity: "Entitat", name: "Name", icon: "Symbol", color: "Farbe",
     value_size: "Wertgroesse", unit_size: "Einheitengroesse",
     show_icon: "Symbol anzeigen", show_name: "Name anzeigen",
-    show_state: "Wert anzeigen", tap_action: "Tippaktion", hold_action: "Halteaktion",
+    show_state: "Wert anzeigen", show_last_updated: "Letzte Aktualisierung", tap_action: "Tippaktion", hold_action: "Halteaktion",
     double_tap_action: "Doppeltippaktion", interactions: "Interaktionen",
     size_small: "Klein", size_medium: "Mittel", size_large: "Gross",
     size_xlarge: "Sehr gross", size_huge: "Riesig",
@@ -742,7 +791,7 @@ const TRANSLATIONS = {
     entity: "Entite", name: "Nom", icon: "Icone", color: "Couleur",
     value_size: "Taille de la valeur", unit_size: "Taille unite",
     show_icon: "Afficher l'icone", show_name: "Afficher le nom",
-    show_state: "Afficher la valeur", tap_action: "Action au toucher", hold_action: "Action au maintien",
+    show_state: "Afficher la valeur", show_last_updated: "Derniere maj", tap_action: "Action au toucher", hold_action: "Action au maintien",
     double_tap_action: "Action au double toucher", interactions: "Interactions",
     size_small: "Petit", size_medium: "Moyen", size_large: "Grand",
     size_xlarge: "Tres grand", size_huge: "Enorme",
@@ -751,7 +800,7 @@ const TRANSLATIONS = {
     entity: "Entidad", name: "Nombre", icon: "Icono", color: "Color",
     value_size: "Tamano del valor", unit_size: "Tamano unidad",
     show_icon: "Mostrar icono", show_name: "Mostrar nombre",
-    show_state: "Mostrar valor", tap_action: "Accion al tocar", hold_action: "Accion al mantener",
+    show_state: "Mostrar valor", show_last_updated: "Ultima actualizacion", tap_action: "Accion al tocar", hold_action: "Accion al mantener",
     double_tap_action: "Accion al doble toque", interactions: "Interacciones",
     size_small: "Pequeno", size_medium: "Mediano", size_large: "Grande",
     size_xlarge: "Muy grande", size_huge: "Enorme",
@@ -760,7 +809,7 @@ const TRANSLATIONS = {
     entity: "Entita", name: "Nome", icon: "Icona", color: "Colore",
     value_size: "Dimensione valore", unit_size: "Dimensione unita",
     show_icon: "Mostra icona", show_name: "Mostra nome",
-    show_state: "Mostra valore", tap_action: "Azione al tocco", hold_action: "Azione alla pressione",
+    show_state: "Mostra valore", show_last_updated: "Ultimo aggiornamento", tap_action: "Azione al tocco", hold_action: "Azione alla pressione",
     double_tap_action: "Azione al doppio tocco", interactions: "Interazioni",
     size_small: "Piccolo", size_medium: "Medio", size_large: "Grande",
     size_xlarge: "Molto grande", size_huge: "Enorme",
@@ -769,7 +818,7 @@ const TRANSLATIONS = {
     entity: "Entidade", name: "Nome", icon: "Icone", color: "Cor",
     value_size: "Tamanho do valor", unit_size: "Tamanho unidade",
     show_icon: "Mostrar icone", show_name: "Mostrar nome",
-    show_state: "Mostrar valor", tap_action: "Acao ao toque", hold_action: "Acao ao manter",
+    show_state: "Mostrar valor", show_last_updated: "Ultima atualizacao", tap_action: "Acao ao toque", hold_action: "Acao ao manter",
     double_tap_action: "Acao ao toque duplo", interactions: "Interacoes",
     size_small: "Pequeno", size_medium: "Medio", size_large: "Grande",
     size_xlarge: "Muito grande", size_huge: "Enorme",
@@ -778,7 +827,7 @@ const TRANSLATIONS = {
     entity: "Entidade", name: "Nome", icon: "Icone", color: "Cor",
     value_size: "Tamanho do valor", unit_size: "Tamanho unidade",
     show_icon: "Mostrar icone", show_name: "Mostrar nome",
-    show_state: "Mostrar valor", tap_action: "Acao ao toque", hold_action: "Acao ao manter",
+    show_state: "Mostrar valor", show_last_updated: "Ultima atualizacao", tap_action: "Acao ao toque", hold_action: "Acao ao manter",
     double_tap_action: "Acao ao toque duplo", interactions: "Interacoes",
     size_small: "Pequeno", size_medium: "Medio", size_large: "Grande",
     size_xlarge: "Muito grande", size_huge: "Enorme",
@@ -787,7 +836,7 @@ const TRANSLATIONS = {
     entity: "Entiteit", name: "Naam", icon: "Pictogram", color: "Kleur",
     value_size: "Waardegrootte", unit_size: "Eenheidgrootte",
     show_icon: "Pictogram tonen", show_name: "Naam tonen",
-    show_state: "Waarde tonen", tap_action: "Tikactie", hold_action: "Houdactie",
+    show_state: "Waarde tonen", show_last_updated: "Laatste update", tap_action: "Tikactie", hold_action: "Houdactie",
     double_tap_action: "Dubbeltikactie", interactions: "Interacties",
     size_small: "Klein", size_medium: "Middel", size_large: "Groot",
     size_xlarge: "Zeer groot", size_huge: "Enorm",
@@ -796,7 +845,7 @@ const TRANSLATIONS = {
     entity: "Encja", name: "Nazwa", icon: "Ikona", color: "Kolor",
     value_size: "Rozmiar wartosci", unit_size: "Rozmiar jednostki",
     show_icon: "Pokaz ikone", show_name: "Pokaz nazwe",
-    show_state: "Pokaz wartosc", tap_action: "Akcja dotknieciem", hold_action: "Akcja przytrzymaniem",
+    show_state: "Pokaz wartosc", show_last_updated: "Ostatnia aktualiz.", tap_action: "Akcja dotknieciem", hold_action: "Akcja przytrzymaniem",
     double_tap_action: "Akcja podwojnym dotkn.", interactions: "Interakcje",
     size_small: "Maly", size_medium: "Sredni", size_large: "Duzy",
     size_xlarge: "Bardzo duzy", size_huge: "Ogromny",
@@ -805,7 +854,7 @@ const TRANSLATIONS = {
     entity: "Entita", name: "Nazev", icon: "Ikona", color: "Barva",
     value_size: "Velikost hodnoty", unit_size: "Velikost jednotky",
     show_icon: "Zobrazit ikonu", show_name: "Zobrazit nazev",
-    show_state: "Zobrazit hodnotu", tap_action: "Akce po klepnuti", hold_action: "Akce po podrzeni",
+    show_state: "Zobrazit hodnotu", show_last_updated: "Posledni aktualizace", tap_action: "Akce po klepnuti", hold_action: "Akce po podrzeni",
     double_tap_action: "Akce po dvojkliku", interactions: "Interakce",
     size_small: "Maly", size_medium: "Stredni", size_large: "Velky",
     size_xlarge: "Velmi velky", size_huge: "Obrovsky",
@@ -814,7 +863,7 @@ const TRANSLATIONS = {
     entity: "Entita", name: "Nazov", icon: "Ikona", color: "Farba",
     value_size: "Velkost hodnoty", unit_size: "Velkost jednotky",
     show_icon: "Zobrazit ikonu", show_name: "Zobrazit nazov",
-    show_state: "Zobrazit hodnotu", tap_action: "Akcia po kliknuti", hold_action: "Akcia po podrzani",
+    show_state: "Zobrazit hodnotu", show_last_updated: "Posledna aktualizacia", tap_action: "Akcia po kliknuti", hold_action: "Akcia po podrzani",
     double_tap_action: "Akcia po dvojkliku", interactions: "Interakcie",
     size_small: "Maly", size_medium: "Stredny", size_large: "Velky",
     size_xlarge: "Velmi velky", size_huge: "Obrovsky",
@@ -823,7 +872,7 @@ const TRANSLATIONS = {
     entity: "Entitet", name: "Navn", icon: "Ikon", color: "Farve",
     value_size: "Vaerdistorrelse", unit_size: "Enhedsstorrelse",
     show_icon: "Vis ikon", show_name: "Vis navn",
-    show_state: "Vis vaerdi", tap_action: "Trykhandling", hold_action: "Holdhandling",
+    show_state: "Vis vaerdi", show_last_updated: "Sidst opdateret", tap_action: "Trykhandling", hold_action: "Holdhandling",
     double_tap_action: "Dobbelttrykhandling", interactions: "Interaktioner",
     size_small: "Lille", size_medium: "Medium", size_large: "Stor",
     size_xlarge: "Meget stor", size_huge: "Kaempe",
@@ -832,7 +881,7 @@ const TRANSLATIONS = {
     entity: "Entitet", name: "Namn", icon: "Ikon", color: "Farg",
     value_size: "Vardestorlek", unit_size: "Enhetsstorlek",
     show_icon: "Visa ikon", show_name: "Visa namn",
-    show_state: "Visa varde", tap_action: "Tryckhandling", hold_action: "Hallhandling",
+    show_state: "Visa varde", show_last_updated: "Senast uppdaterad", tap_action: "Tryckhandling", hold_action: "Hallhandling",
     double_tap_action: "Dubbeltryckhandling", interactions: "Interaktioner",
     size_small: "Liten", size_medium: "Medel", size_large: "Stor",
     size_xlarge: "Mycket stor", size_huge: "Enorm",
@@ -841,7 +890,7 @@ const TRANSLATIONS = {
     entity: "Entitet", name: "Navn", icon: "Ikon", color: "Farge",
     value_size: "Verdistorrelse", unit_size: "Enhetsstorrelse",
     show_icon: "Vis ikon", show_name: "Vis navn",
-    show_state: "Vis verdi", tap_action: "Trykkhandling", hold_action: "Holdehandling",
+    show_state: "Vis verdi", show_last_updated: "Sist oppdatert", tap_action: "Trykkhandling", hold_action: "Holdehandling",
     double_tap_action: "Dobbelttrykkhandling", interactions: "Interaksjoner",
     size_small: "Liten", size_medium: "Middels", size_large: "Stor",
     size_xlarge: "Veldig stor", size_huge: "Enorm",
@@ -850,7 +899,7 @@ const TRANSLATIONS = {
     entity: "Entiteetti", name: "Nimi", icon: "Kuvake", color: "Vari",
     value_size: "Arvon koko", unit_size: "Yksikon koko",
     show_icon: "Nayta kuvake", show_name: "Nayta nimi",
-    show_state: "Nayta arvo", tap_action: "Napautustoiminto", hold_action: "Pitopainalluks.",
+    show_state: "Nayta arvo", show_last_updated: "Viimeisin paivitys", tap_action: "Napautustoiminto", hold_action: "Pitopainalluks.",
     double_tap_action: "Kaksoisnapautus", interactions: "Vuorovaikutukset",
     size_small: "Pieni", size_medium: "Keskikokoinen", size_large: "Suuri",
     size_xlarge: "Erittain suuri", size_huge: "Valtava",
@@ -859,7 +908,7 @@ const TRANSLATIONS = {
     entity: "Sushchnost", name: "Imya", icon: "Ikonka", color: "Tsvet",
     value_size: "Razmer znacheniya", unit_size: "Razmer edinitsy",
     show_icon: "Pokazat ikonku", show_name: "Pokazat imya",
-    show_state: "Pokazat znachenie", tap_action: "Deystvie kasaniya", hold_action: "Deystvie uderzhaniya",
+    show_state: "Pokazat znachenie", show_last_updated: "Poslednee obnovlenie", tap_action: "Deystvie kasaniya", hold_action: "Deystvie uderzhaniya",
     double_tap_action: "Dvoynoe kasanie", interactions: "Vzaimodeystviya",
     size_small: "Malyy", size_medium: "Sredniy", size_large: "Bolshoy",
     size_xlarge: "Ochen bolshoy", size_huge: "Ogromnyy",
@@ -868,7 +917,7 @@ const TRANSLATIONS = {
     entity: "Sutnist", name: "Imya", icon: "Ikonka", color: "Kolir",
     value_size: "Rozmir znachennya", unit_size: "Rozmir odynytsi",
     show_icon: "Pokazaty ikonku", show_name: "Pokazaty imya",
-    show_state: "Pokazaty znachennya", tap_action: "Diya dotyku", hold_action: "Diya utrymannya",
+    show_state: "Pokazaty znachennya", show_last_updated: "Ostannie onovlennya", tap_action: "Diya dotyku", hold_action: "Diya utrymannya",
     double_tap_action: "Podviynyy dotyk", interactions: "Vzayemodiyi",
     size_small: "Malyy", size_medium: "Seredniy", size_large: "Velykyy",
     size_xlarge: "Duzhe velykyy", size_huge: "Velicheznyy",
@@ -877,7 +926,7 @@ const TRANSLATIONS = {
     entity: "Entitas", name: "Nev", icon: "Ikon", color: "Szin",
     value_size: "Ertekmeret", unit_size: "Egysegmeret",
     show_icon: "Ikon mutatasa", show_name: "Nev mutatasa",
-    show_state: "Ertek mutatasa", tap_action: "Erintesi muvelet", hold_action: "Nyomva tartas",
+    show_state: "Ertek mutatasa", show_last_updated: "Utolso frissites", tap_action: "Erintesi muvelet", hold_action: "Nyomva tartas",
     double_tap_action: "Dupla erintes", interactions: "Interakciok",
     size_small: "Kicsi", size_medium: "Kozepes", size_large: "Nagy",
     size_xlarge: "Nagyon nagy", size_huge: "Hatalmas",
@@ -886,7 +935,7 @@ const TRANSLATIONS = {
     entity: "Entitate", name: "Nume", icon: "Pictograma", color: "Culoare",
     value_size: "Dimensiune valoare", unit_size: "Dimensiune unitate",
     show_icon: "Afiseaza pictograma", show_name: "Afiseaza numele",
-    show_state: "Afiseaza valoarea", tap_action: "Actiune la atingere", hold_action: "Actiune la mentinere",
+    show_state: "Afiseaza valoarea", show_last_updated: "Ultima actualizare", tap_action: "Actiune la atingere", hold_action: "Actiune la mentinere",
     double_tap_action: "Actiune dubla atingere", interactions: "Interactiuni",
     size_small: "Mic", size_medium: "Mediu", size_large: "Mare",
     size_xlarge: "Foarte mare", size_huge: "Enorm",
@@ -895,7 +944,7 @@ const TRANSLATIONS = {
     entity: "Obekt", name: "Ime", icon: "Ikona", color: "Tsyat",
     value_size: "Razmer na stoynostta", unit_size: "Razmer na edinitsa",
     show_icon: "Pokazhi ikona", show_name: "Pokazhi ime",
-    show_state: "Pokazhi stoynost", tap_action: "Deystvie pri dokosv.", hold_action: "Deystvie pri zadarzhane",
+    show_state: "Pokazhi stoynost", show_last_updated: "Posledna aktualiz.", tap_action: "Deystvie pri dokosv.", hold_action: "Deystvie pri zadarzhane",
     double_tap_action: "Dvoyno dokosv.", interactions: "Vzaimodeystviya",
     size_small: "Malak", size_medium: "Sreden", size_large: "Golyam",
     size_xlarge: "Mnogo golyam", size_huge: "Ogromen",
@@ -904,7 +953,7 @@ const TRANSLATIONS = {
     entity: "Ontotita", name: "Onoma", icon: "Eikonidio", color: "Chroma",
     value_size: "Megethos timis", unit_size: "Megethos monadas",
     show_icon: "Emfanisi eikonidiou", show_name: "Emfanisi onomatos",
-    show_state: "Emfanisi timis", tap_action: "Energeia patiamatos", hold_action: "Energeia kratimatos",
+    show_state: "Emfanisi timis", show_last_updated: "Teleftaia enimerosi", tap_action: "Energeia patiamatos", hold_action: "Energeia kratimatos",
     double_tap_action: "Diplo patima", interactions: "Allilepidraseis",
     size_small: "Mikro", size_medium: "Mesaio", size_large: "Megalo",
     size_xlarge: "Poly megalo", size_huge: "Terastio",
@@ -913,7 +962,7 @@ const TRANSLATIONS = {
     entity: "Varlik", name: "Ad", icon: "Simge", color: "Renk",
     value_size: "Deger boyutu", unit_size: "Birim boyutu",
     show_icon: "Simgeyi goster", show_name: "Adi goster",
-    show_state: "Degeri goster", tap_action: "Dokunma eylemi", hold_action: "Basili tutma eylemi",
+    show_state: "Degeri goster", show_last_updated: "Son guncelleme", tap_action: "Dokunma eylemi", hold_action: "Basili tutma eylemi",
     double_tap_action: "Cift dokunma eylemi", interactions: "Etkilesimler",
     size_small: "Kucuk", size_medium: "Orta", size_large: "Buyuk",
     size_xlarge: "Cok buyuk", size_huge: "Dev",
@@ -922,7 +971,7 @@ const TRANSLATIONS = {
     entity: "Entiti", name: "Namae", icon: "Aikon", color: "Iro",
     value_size: "Atai no saizu", unit_size: "Tani no saizu",
     show_icon: "Aikon hyoji", show_name: "Namae hyoji",
-    show_state: "Atai hyoji", tap_action: "Tappu akushon", hold_action: "Horudo akushon",
+    show_state: "Atai hyoji", show_last_updated: "Saigo no koshin", tap_action: "Tappu akushon", hold_action: "Horudo akushon",
     double_tap_action: "Daburu tappu", interactions: "Intarakushon",
     size_small: "Sho", size_medium: "Chu", size_large: "Dai",
     size_xlarge: "Tokudai", size_huge: "Kyodai",
@@ -931,7 +980,7 @@ const TRANSLATIONS = {
     entity: "Gaechae", name: "Ireum", icon: "Aikon", color: "Saek",
     value_size: "Gabs keugi", unit_size: "Danwi keugi",
     show_icon: "Aikon pyosi", show_name: "Ireum pyosi",
-    show_state: "Gabs pyosi", tap_action: "Teo aeksyeon", hold_action: "Giru aeksyeon",
+    show_state: "Gabs pyosi", show_last_updated: "Majimag eobdeiteu", tap_action: "Teo aeksyeon", hold_action: "Giru aeksyeon",
     double_tap_action: "Deobeur teo", interactions: "Sanghojagyong",
     size_small: "Jageun", size_medium: "Jungan", size_large: "Keun",
     size_xlarge: "Maeu keun", size_huge: "Geodaehan",
@@ -940,7 +989,7 @@ const TRANSLATIONS = {
     entity: "Shiti", name: "Mingcheng", icon: "Tubiao", color: "Yanse",
     value_size: "Zhi daxiao", unit_size: "Danwei daxiao",
     show_icon: "Xianshi tubiao", show_name: "Xianshi mingcheng",
-    show_state: "Xianshi zhi", tap_action: "Dianji caozuo", hold_action: "Chang'an caozuo",
+    show_state: "Xianshi zhi", show_last_updated: "Zuihou gengxin", tap_action: "Dianji caozuo", hold_action: "Chang'an caozuo",
     double_tap_action: "Shuangji caozuo", interactions: "Jiaohudongzuo",
     size_small: "Xiao", size_medium: "Zhong", size_large: "Da",
     size_xlarge: "Tehda", size_huge: "Juda",
@@ -949,7 +998,7 @@ const TRANSLATIONS = {
     entity: "Shiti", name: "Mingcheng", icon: "Tubiao", color: "Yanse",
     value_size: "Zhi daxiao", unit_size: "Danwei daxiao",
     show_icon: "Xianshi tubiao", show_name: "Xianshi mingcheng",
-    show_state: "Xianshi zhi", tap_action: "Dianji caozuo", hold_action: "Chang'an caozuo",
+    show_state: "Xianshi zhi", show_last_updated: "Zuihou gengxin", tap_action: "Dianji caozuo", hold_action: "Chang'an caozuo",
     double_tap_action: "Shuangji caozuo", interactions: "Jiaohudongzuo",
     size_small: "Xiao", size_medium: "Zhong", size_large: "Da",
     size_xlarge: "Tehda", size_huge: "Juda",
@@ -958,7 +1007,7 @@ const TRANSLATIONS = {
     entity: "Kian", name: "Ism", icon: "Ramz", color: "Lawn",
     value_size: "Hajm alqima", unit_size: "Hajm alwahda",
     show_icon: "Izhar alramz", show_name: "Izhar alism",
-    show_state: "Izhar alqima", tap_action: "Ijraa allams", hold_action: "Ijraa alithbat",
+    show_state: "Izhar alqima", show_last_updated: "Akhir tahdith", tap_action: "Ijraa allams", hold_action: "Ijraa alithbat",
     double_tap_action: "Lams muzdawaj", interactions: "Tafaulat",
     size_small: "Saghir", size_medium: "Mutawassit", size_large: "Kabir",
     size_xlarge: "Kabir jiddan", size_huge: "Dakhm",
@@ -967,7 +1016,7 @@ const TRANSLATIONS = {
     entity: "Yeshut", name: "Shem", icon: "Semel", color: "Tseva",
     value_size: "Godel ha'erekh", unit_size: "Godel hayehida",
     show_icon: "Hatsg semel", show_name: "Hatsg shem",
-    show_state: "Hatsg erekh", tap_action: "Peulat nekisha", hold_action: "Peulat lekhitsa",
+    show_state: "Hatsg erekh", show_last_updated: "Idkun acharon", tap_action: "Peulat nekisha", hold_action: "Peulat lekhitsa",
     double_tap_action: "Nekisha kfula", interactions: "Interaktsiyot",
     size_small: "Katan", size_medium: "Beinoni", size_large: "Gadol",
     size_xlarge: "Gadol meod", size_huge: "Anak",
@@ -976,7 +1025,7 @@ const TRANSLATIONS = {
     entity: "Entitat", name: "Nom", icon: "Icona", color: "Color",
     value_size: "Mida del valor", unit_size: "Mida unitat",
     show_icon: "Mostra icona", show_name: "Mostra nom",
-    show_state: "Mostra valor", tap_action: "Accio en tocar", hold_action: "Accio en mantenir",
+    show_state: "Mostra valor", show_last_updated: "Ultima actualitzacio", tap_action: "Accio en tocar", hold_action: "Accio en mantenir",
     double_tap_action: "Accio doble toc", interactions: "Interaccions",
     size_small: "Petit", size_medium: "Mitja", size_large: "Gran",
     size_xlarge: "Molt gran", size_huge: "Enorme",
@@ -985,7 +1034,7 @@ const TRANSLATIONS = {
     entity: "Entitas", name: "Nama", icon: "Ikon", color: "Warna",
     value_size: "Ukuran nilai", unit_size: "Ukuran satuan",
     show_icon: "Tampilkan ikon", show_name: "Tampilkan nama",
-    show_state: "Tampilkan nilai", tap_action: "Aksi ketuk", hold_action: "Aksi tahan",
+    show_state: "Tampilkan nilai", show_last_updated: "Pembaruan terakhir", tap_action: "Aksi ketuk", hold_action: "Aksi tahan",
     double_tap_action: "Aksi ketuk ganda", interactions: "Interaksi",
     size_small: "Kecil", size_medium: "Sedang", size_large: "Besar",
     size_xlarge: "Sangat besar", size_huge: "Raksasa",
@@ -1055,6 +1104,7 @@ class TileSensorCardEditor extends LitElement {
       show_icon: true,
       show_name: true,
       show_state: true,
+      show_last_updated: false,
       value_size: "1.5rem",
       unit_size: "1rem",
       ...this._config,
